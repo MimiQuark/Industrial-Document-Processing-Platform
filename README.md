@@ -1,5 +1,9 @@
 # 工业图档异步处理与审核平台
 
+[![CI](https://github.com/MimiJimmy001/industrial-document-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/MimiJimmy001/industrial-document-platform/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 基于 Python 3.12、FastAPI、Celery、Redis、PostgreSQL 和 MinIO 的可运行后端平台。支持上传 PDF、SVG、Gerber 图档，异步解析和规则分流，并对告警任务执行带并发锁的人工审核。
 
 ## 核心能力
