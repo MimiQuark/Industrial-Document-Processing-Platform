@@ -8,6 +8,8 @@
 
 ## 项目内容导航
 
+- [可视化与可解释性](docs/VISUAL_GUIDE.md)：4 个以上 Mermaid 思维导图、流程图和指标解释
+
 - [项目案例研究](docs/CASE_STUDY.md)：业务背景、架构取舍、核心难点、验证结果和面试讲解
 - [完整项目报告](PROJECT_REPORT.md)：需求、设计、实现和验收细节
 - [架构说明](docs/architecture.md)、[运行手册](docs/runbook.md)、[安全边界](docs/security.md)
