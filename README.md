@@ -6,6 +6,11 @@
 
 基于 Python 3.12、FastAPI、Celery、Redis、PostgreSQL 和 MinIO 的可运行后端平台。支持上传 PDF、SVG、Gerber 图档，异步解析和规则分流，并对告警任务执行带并发锁的人工审核。
 
+## 项目内容导航
+
+- [项目案例研究](docs/CASE_STUDY.md)：业务背景、架构取舍、核心难点、验证结果和面试讲解
+- [完整项目报告](PROJECT_REPORT.md)：需求、设计、实现和验收细节
+- [架构说明](docs/architecture.md)、[运行手册](docs/runbook.md)、[安全边界](docs/security.md)
 ## 核心能力
 
 - 文件上传、SHA256 内容去重、`Idempotency-Key` 幂等提交
