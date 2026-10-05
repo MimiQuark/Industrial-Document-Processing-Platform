@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}登录 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="card" style="max-width:460px;margin:70px auto;">
+  <h1>登录平台</h1>
+  <p class="muted">使用种子账号体验提交、异步处理和审核闭环。</p>
+  <form id="login-form">
+    <p><label for="email">邮箱</label><input id="email" type="email" value="admin@example.com" required></p>
+    <p><label for="password">密码</label><input id="password" type="password" value="Admin123!" required></p>
+    <button type="submit">登录</button>
+  </form>
+  <p class="muted">管理员：admin@example.com / Admin123!<br>审核员：reviewer@example.com / Reviewer123!<br>提交者：submitter@example.com / Submitter123!</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await api("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: document.getElementById("email").value, password: document.getElementById("password").value })
+    });
+    location.href = "/";
+  } catch (error) { showToast(error.message, true); }
+});
+</script>
+{% endblock %}

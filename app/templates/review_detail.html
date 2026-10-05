@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}审核处理 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>审核处理</h1><p class="muted mono">{{ review_id }}</p></div><a class="button secondary" href="/reviews">返回审核中心</a></div>
+<div class="card" id="review-summary">加载中…</div>
+<div class="card">
+  <h2>审核决定</h2>
+  <p><label for="comment">审核意见（驳回必填）</label><textarea id="comment" maxlength="4000"></textarea></p>
+  <div class="actions"><button id="approve-button">通过</button><button class="danger" id="reject-button">驳回</button><button class="secondary" id="release-button">释放审核单</button></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const reviewId = "{{ review_id }}";
+const loadReview = async () => {
+  const review = await api(`/api/v1/reviews/${reviewId}`);
+  document.getElementById("review-summary").innerHTML = `<div class="page-head"><div><h2>${review.task_id}</h2>${statusBadge(review.status)}</div></div><p>领取人：<span class="mono">${review.assignee_id || "-"}</span></p><p>租约到期：${formatTime(review.lease_expires_at)}</p><p>${review.comment ? escapeHtml(review.comment) : ""}</p>`;
+  const disabled = review.status !== "in_review";
+  ["approve-button", "reject-button"].forEach(id => document.getElementById(id).disabled = disabled);
+};
+const decide = async (decision) => {
+  try {
+    await api(`/api/v1/reviews/${reviewId}/decision`, { method: "POST", body: JSON.stringify({ decision, comment: document.getElementById("comment").value || null }) });
+    showToast("审核决定已保存"); await loadReview();
+  } catch (error) { showToast(error.message, true); }
+};
+document.getElementById("approve-button").onclick = () => decide("approve");
+document.getElementById("reject-button").onclick = () => decide("reject");
+document.getElementById("release-button").onclick = async () => {
+  try { await api(`/api/v1/reviews/${reviewId}/release`, { method: "POST" }); showToast("审核单已释放"); await loadReview(); }
+  catch (error) { showToast(error.message, true); }
+};
+loadReview().catch(error => showToast(error.message, true));
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}任务详情 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>任务详情</h1><p class="muted mono">{{ task_id }}</p></div><a class="button secondary" href="/">返回任务</a></div>
+<div class="card" id="task-summary">加载中…</div>
+<div class="grid">
+  <div class="card"><h2>状态事件</h2><div id="events"></div></div>
+  <div class="card"><h2>规则结论</h2><div id="findings"></div><pre id="result-summary" class="hidden"></pre></div>
+</div>
+<div class="card"><h2>技术信息</h2><div id="technical"></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const taskId = "{{ task_id }}";
+let source;
+const loadTask = async () => {
+  const task = await api(`/api/v1/tasks/${taskId}`);
+  document.getElementById("task-summary").innerHTML = `
+    <div class="page-head" style="margin-bottom:12px"><div><h2>${escapeHtml(task.file.original_name)}</h2><span class="mono muted">${task.file.sha256}</span></div>${statusBadge(task.status)}</div>
+    <div class="progress"><span style="width:${task.progress}%"></span></div>
+    <p class="muted">进度 ${task.progress}% · 尝试 ${task.attempt_count}/${task.max_attempts} · 优先级 ${task.priority}</p>
+    ${task.failure_message ? `<p class="error">${escapeHtml(task.failure_message)}</p>` : ""}
+    <div class="actions">
+      <button class="secondary" onclick="downloadTask('raw')">下载原文件</button>
+      <button class="secondary" onclick="downloadTask('result')">下载结果</button>
+      <button class="secondary" id="cancel-button">取消任务</button>
+      <button id="retry-button">重试任务</button>
+      ${task.review ? `<a class="button" href="/reviews/${task.review.id}">查看审核单</a>` : ""}
+    </div>`;
+  document.getElementById("events").innerHTML = task.events.length ? task.events.slice().reverse().map(event => `
+    <div class="event"><strong>${escapeHtml(event.event_type)}</strong> ${statusBadge(event.to_status)}<div class="muted">${formatTime(event.created_at)} · ${escapeHtml(event.message || "")}</div></div>
+  `).join("") : `<div class="empty">暂无事件</div>`;
+  document.getElementById("findings").innerHTML = task.findings.length ? task.findings.map(item => `
+    <div class="event"><strong>${escapeHtml(item.code)}</strong> <span class="badge">${item.severity}</span><div>${escapeHtml(item.message)}</div></div>
+  `).join("") : `<div class="empty">暂无规则告警</div>`;
+  document.getElementById("technical").innerHTML = `<p>Trace ID：<span class="mono">${task.trace_id}</span></p><p>解析器版本：${task.parser_version || "-"} · 规则版本：${task.rule_version}</p>`;
+  if (task.result_summary) {
+    const result = document.getElementById("result-summary");
+    result.textContent = JSON.stringify(task.result_summary, null, 2); result.classList.remove("hidden");
+  }
+  document.getElementById("cancel-button").onclick = () => action("cancel");
+  document.getElementById("retry-button").onclick = () => action("retry");
+};
+const action = async (name) => {
+  try { await api(`/api/v1/tasks/${taskId}/${name}`, { method: "POST" }); showToast("操作已提交"); await loadTask(); }
+  catch (error) { showToast(error.message, true); }
+};
+const downloadTask = (kind) => { location.href = `/api/v1/tasks/${taskId}/download?kind=${kind}`; };
+const connectEvents = () => {
+  source = new EventSource(`/api/v1/tasks/${taskId}/events`);
+  source.addEventListener("update", () => loadTask());
+  source.addEventListener("snapshot", () => loadTask());
+  source.onerror = () => { source.close(); setTimeout(connectEvents, 3000); };
+};
+loadTask().then(connectEvents).catch(error => showToast(error.message, true));
+</script>
+{% endblock %}

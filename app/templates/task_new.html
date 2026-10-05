@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}创建任务 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>创建解析任务</h1><p class="muted">支持 PDF、SVG、Gerber，单文件不超过 50 MiB。</p></div><a class="button secondary" href="/">返回任务</a></div>
+<div class="card">
+  <form id="upload-form">
+    <div class="form-grid">
+      <div class="full"><label for="file">图档文件</label><input id="file" name="file" type="file" accept=".pdf,.svg,.gerber,.gbr" required></div>
+      <div><label for="task-type">任务类型</label><select id="task-type" name="task_type"><option value="">自动识别</option><option value="pdf">PDF</option><option value="svg">SVG</option><option value="gerber">Gerber</option></select></div>
+      <div><label for="priority">优先级</label><select id="priority" name="priority"><option value="normal">普通</option><option value="high">高</option><option value="low">低</option></select></div>
+    </div>
+    <p><button type="submit" id="submit-button">提交任务</button></p>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("upload-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = document.getElementById("submit-button");
+  button.disabled = true; button.textContent = "上传中…";
+  try {
+    const form = new FormData();
+    const file = document.getElementById("file").files[0];
+    form.append("file", file);
+    const taskType = document.getElementById("task-type").value;
+    if (taskType) form.append("task_type", taskType);
+    form.append("priority", document.getElementById("priority").value);
+    const result = await api("/api/v1/tasks", {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: form
+    });
+    location.href = `/tasks/${result.task.id}`;
+  } catch (error) {
+    showToast(error.message, true);
+    button.disabled = false; button.textContent = "提交任务";
+  }
+});
+</script>
+{% endblock %}

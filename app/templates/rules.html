@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}规则管理 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>规则版本管理</h1><p class="muted">修改会创建新版本，已在途任务继续使用原规则版本。</p></div></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>编码</th><th>名称</th><th>类型</th><th>严重性</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody id="rule-body"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody></table></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const loadRules = async () => {
+  const rules = await api("/api/v1/admin/rules");
+  document.getElementById("rule-body").innerHTML = rules.length ? rules.map(rule => `
+    <tr><td class="mono">${escapeHtml(rule.code)}</td><td>${escapeHtml(rule.name)}</td><td>${rule.file_type || "-"}</td><td>${rule.severity}</td><td>${rule.version}</td><td>${rule.enabled ? "启用" : "停用"}</td>
+    <td><button class="secondary" onclick="toggleRule('${rule.id}', ${!rule.enabled})">${rule.enabled ? "停用" : "启用"}</button></td></tr>`).join("") : `<tr><td colspan="7" class="empty">暂无规则</td></tr>`;
+};
+const toggleRule = async (id, enabled) => {
+  try { await api(`/api/v1/admin/rules/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) }); showToast("已创建规则新版本"); await loadRules(); }
+  catch (error) { showToast(error.message, true); }
+};
+loadRules().catch(error => showToast(error.message, true));
+</script>
+{% endblock %}

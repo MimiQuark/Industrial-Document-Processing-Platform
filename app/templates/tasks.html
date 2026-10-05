@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}任务中心 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>任务中心</h1><p class="muted">上传图档、跟踪异步处理并查看规则结论。</p></div>
+  <a class="button" href="/tasks/new">创建任务</a>
+</div>
+<div class="stats" id="stats"></div>
+<div class="card">
+  <div class="page-head">
+    <h2>任务列表</h2>
+    <select id="status-filter" style="width:180px">
+      <option value="">全部状态</option>
+      <option value="queued">排队中</option><option value="running">处理中</option>
+      <option value="review_pending">待人工复核</option><option value="succeeded">成功</option>
+      <option value="failed">失败</option><option value="dead">死信</option>
+      <option value="canceled">已取消</option>
+    </select>
+  </div>
+  <div class="table-wrap">
+    <table><thead><tr><th>任务</th><th>文件</th><th>类型</th><th>状态</th><th>进度</th><th>创建时间</th></tr></thead>
+    <tbody id="task-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody></table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const loadTasks = async () => {
+  const status = document.getElementById("status-filter").value;
+  const data = await api(`/api/v1/tasks?limit=50${status ? `&status=${status}` : ""}`);
+  const counts = data.items.reduce((all, item) => { all[item.status] = (all[item.status] || 0) + 1; return all; }, {});
+  document.getElementById("stats").innerHTML = [
+    ["任务总数", data.total], ["处理中", (counts.running || 0) + (counts.retrying || 0)],
+    ["待审核", counts.review_pending || 0], ["失败/死信", (counts.failed || 0) + (counts.dead || 0)]
+  ].map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`).join("");
+  const body = document.getElementById("task-body");
+  body.innerHTML = data.items.length ? data.items.map(task => `
+    <tr><td><a class="mono" href="/tasks/${task.id}">${task.id.slice(0, 8)}</a><br><span class="muted">${task.priority}</span></td>
+    <td>${escapeHtml(task.file.original_name)}<br><span class="muted mono">${task.file.sha256.slice(0, 12)}…</span></td>
+    <td>${task.task_type}</td><td>${statusBadge(task.status)}</td>
+    <td style="min-width:120px"><div class="progress"><span style="width:${task.progress}%"></span></div><span class="muted">${task.progress}%</span></td>
+    <td>${formatTime(task.created_at)}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">暂无任务</td></tr>`;
+};
+document.getElementById("status-filter").addEventListener("change", loadTasks);
+loadTasks().catch(error => showToast(error.message, true));
+</script>
+{% endblock %}

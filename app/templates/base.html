@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}工业图档平台{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">工业图档处理平台</a>
+    <nav>
+      <a class="{{ 'active' if active == 'tasks' else '' }}" href="/">任务</a>
+      <a class="{{ 'active' if active == 'reviews' else '' }}" href="/reviews">审核</a>
+      <a class="{{ 'active' if active == 'rules' else '' }}" href="/admin/rules">规则</a>
+      <a class="{{ 'active' if active == 'dlq' else '' }}" href="/admin/dead-letters">死信</a>
+      <a class="{{ 'active' if active == 'audit' else '' }}" href="/admin/audit">审计</a>
+    </nav>
+    <div class="user-area">
+      <span id="current-user">未登录</span>
+      <button class="link-button" id="logout-button" type="button">退出</button>
+    </div>
+  </header>
+  <main class="container">
+    <div id="toast" class="toast hidden"></div>
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

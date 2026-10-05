@@ -1,0 +1,146 @@
+name: industrial-document-platform
+
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-development}
+  SECRET_KEY: ${SECRET_KEY:-change-this-development-secret-key-32chars}
+  DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://industrial:industrial@postgres:5432/industrial}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_SECURE: ${MINIO_SECURE:-false}
+  RAW_BUCKET: ${RAW_BUCKET:-raw}
+  RESULT_BUCKET: ${RESULT_BUCKET:-results}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
+  REVIEWER_EMAIL: ${REVIEWER_EMAIL:-reviewer@example.com}
+  REVIEWER_PASSWORD: ${REVIEWER_PASSWORD:-Reviewer123!}
+  SUBMITTER_EMAIL: ${SUBMITTER_EMAIL:-submitter@example.com}
+  SUBMITTER_PASSWORD: ${SUBMITTER_PASSWORD:-Submitter123!}
+  ACTIVE_TASK_LIMIT: ${ACTIVE_TASK_LIMIT:-20}
+  REVIEW_LEASE_MINUTES: ${REVIEW_LEASE_MINUTES:-30}
+  EXECUTION_LEASE_SECONDS: ${EXECUTION_LEASE_SECONDS:-120}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-industrial}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-industrial}
+      POSTGRES_DB: ${POSTGRES_DB:-industrial}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-industrial} -d ${POSTGRES_DB:-industrial}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: ${MINIO_IMAGE:-bitnamilegacy/minio:latest}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/bitnami/minio/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+
+  migrate:
+    build: .
+    environment: *app-env
+    command: ["/bin/sh", "-c", "alembic upgrade head && python -m app.bootstrap"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    environment: *app-env
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  worker:
+    build: .
+    environment:
+      <<: *app-env
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+    command: ["/bin/sh", "-c", "celery -A app.worker.celery_app:celery_app worker -Q tasks.high,tasks.normal,tasks.low -c ${WORKER_CONCURRENCY:-4} --loglevel=INFO"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    environment: *app-env
+    command: ["python", "-m", "app.scheduler"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.3.0}
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  prometheus_data:
+

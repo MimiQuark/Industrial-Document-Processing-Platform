@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}审计日志 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>审计日志</h1><p class="muted">append-only 哈希链记录关键操作。</p></div><button id="verify-button">校验完整性</button></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>ID</th><th>动作</th><th>资源</th><th>操作者</th><th>Trace ID</th><th>时间</th></tr></thead><tbody id="audit-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody></table></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const loadAudit = async () => {
+  const data = await api("/api/v1/admin/audit?limit=100");
+  document.getElementById("audit-body").innerHTML = data.items.length ? data.items.map(item => `
+    <tr><td>${item.id}</td><td>${escapeHtml(item.action)}</td><td>${escapeHtml(item.resource_type)} / <span class="mono">${item.resource_id.slice(0, 8)}</span></td><td class="mono">${item.actor_id ? item.actor_id.slice(0, 8) : "system"}</td><td class="mono">${item.trace_id.slice(0, 12)}</td><td>${formatTime(item.created_at)}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">暂无审计日志</td></tr>`;
+};
+document.getElementById("verify-button").addEventListener("click", async () => {
+  try { const result = await api("/api/v1/admin/audit/verify", { method: "POST" }); showToast(result.valid ? "审计链完整" : `审计链在事件 ${result.broken_event_id} 断开`, !result.valid); }
+  catch (error) { showToast(error.message, true); }
+});
+loadAudit().catch(error => showToast(error.message, true));
+</script>
+{% endblock %}

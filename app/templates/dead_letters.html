@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}死信队列 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>死信队列</h1><p class="muted">重试次数耗尽的任务可人工重新入队。</p></div></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>任务</th><th>原因</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody id="dlq-body"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody></table></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const loadDlq = async () => {
+  const items = await api("/api/v1/admin/dead-letters");
+  document.getElementById("dlq-body").innerHTML = items.length ? items.map(item => `
+    <tr><td class="mono"><a href="/tasks/${item.task_id}">${item.task_id.slice(0, 8)}</a></td><td>${escapeHtml(item.reason_code)}<br><span class="muted">${escapeHtml(item.reason)}</span></td><td>${escapeHtml(item.status)}</td><td>${formatTime(item.created_at)}</td>
+    <td><button ${item.status === "requeued" ? "disabled" : ""} onclick="requeue('${item.id}')">重新入队</button></td></tr>`).join("") : `<tr><td colspan="5" class="empty">暂无死信</td></tr>`;
+};
+const requeue = async (id) => {
+  try { await api(`/api/v1/admin/dead-letters/${id}/requeue`, { method: "POST" }); showToast("任务已重新入队"); await loadDlq(); }
+  catch (error) { showToast(error.message, true); }
+};
+loadDlq().catch(error => showToast(error.message, true));
+</script>
+{% endblock %}

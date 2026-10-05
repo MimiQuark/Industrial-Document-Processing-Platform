@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}审核中心 · 工业图档平台{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>人工审核中心</h1><p class="muted">使用数据库锁安全领取审核单，禁止自审。</p></div><button id="claim-next">领取下一单</button></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>审核单</th><th>任务</th><th>状态</th><th>审核员</th><th>创建时间</th><th></th></tr></thead><tbody id="review-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody></table></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const loadReviews = async () => {
+  const data = await api("/api/v1/reviews?limit=100");
+  document.getElementById("review-body").innerHTML = data.items.length ? data.items.map(item => `
+    <tr><td class="mono">${item.id.slice(0, 8)}</td><td class="mono">${item.task_id.slice(0, 8)}</td><td>${statusBadge(item.status)}</td>
+    <td>${item.assignee_id ? item.assignee_id.slice(0, 8) : "-"}</td><td>${formatTime(item.created_at)}</td>
+    <td><a class="button secondary" href="/reviews/${item.id}">打开</a></td></tr>`).join("") : `<tr><td colspan="6" class="empty">暂无待审核任务</td></tr>`;
+};
+document.getElementById("claim-next").addEventListener("click", async () => {
+  try {
+    const item = await api("/api/v1/reviews/claim-next", { method: "POST" });
+    if (item) location.href = `/reviews/${item.id}`; else showToast("当前没有可领取的审核单");
+  } catch (error) { showToast(error.message, true); }
+});
+loadReviews().catch(error => showToast(error.message, true));
+</script>
+{% endblock %}

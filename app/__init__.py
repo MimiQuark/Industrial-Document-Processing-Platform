@@ -1,0 +1,1 @@
+"""Industrial document processing platform."""

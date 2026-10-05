@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check app tests alembic
+      - run: mypy app
+      - run: pytest -q
+
+  compose-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: docker compose up -d --build
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/health/ready; then exit 0; fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - run: E2E_BASE_URL=http://localhost:8000 pytest tests/test_e2e.py -q
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down -v
