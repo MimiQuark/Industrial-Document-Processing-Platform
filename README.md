@@ -1,6 +1,7 @@
 # 工业图档异步处理与审核平台
 
-[![CI](https://github.com/MimiJimmy001/industrial-document-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/MimiJimmy001/industrial-document-platform/actions/workflows/ci.yml)
+[![CI](https://github.com/MimiQuark/Industrial-Document-Processing-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/MimiQuark/Industrial-Document-Processing-Platform/actions/workflows/ci.yml)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?logo=github&logoColor=white)](https://github.com/MimiQuark/Industrial-Document-Processing-Platform)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
