@@ -19,6 +19,10 @@ celery_app.conf.update(
     worker_hijack_root_logger=False,
     broker_connection_retry_on_startup=True,
     task_default_queue="tasks.normal",
+    # 防止异常任务无限占用 worker
+    task_soft_time_limit=600,
+    task_time_limit=660,
+    worker_max_tasks_per_child=100,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",

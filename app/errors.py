@@ -1,9 +1,15 @@
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+from app.domain.errors import FileValidationError
+from app.domain.state_machine import InvalidTransition
+
+logger = logging.getLogger(__name__)
 
 
 class AppError(Exception):
@@ -40,6 +46,25 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=error_body(request, exc.code, exc.message, exc.details),
         )
 
+    @app.exception_handler(FileValidationError)
+    async def file_validation_error_handler(
+        request: Request, exc: FileValidationError
+    ) -> JSONResponse:
+        # 上传阶段的扩展名/签名错误属于客户端错误，不能落到 500。
+        return JSONResponse(
+            status_code=400,
+            content=error_body(request, exc.code, str(exc), None),
+        )
+
+    @app.exception_handler(InvalidTransition)
+    async def invalid_transition_handler(
+        request: Request, exc: InvalidTransition
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content=error_body(request, "INVALID_STATE_TRANSITION", str(exc), None),
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
         request: Request, exc: RequestValidationError
@@ -56,6 +81,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("unhandled request error", exc_info=exc)
         return JSONResponse(
             status_code=500,
             content=error_body(request, "INTERNAL_ERROR", "服务内部错误", None),

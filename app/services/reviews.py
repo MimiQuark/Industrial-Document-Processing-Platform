@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
@@ -104,7 +104,13 @@ def claim_first_available(session: Session, user: User, trace_id: str) -> Review
         select(ReviewCase)
         .join(Task, ReviewCase.task_id == Task.id)
         .where(
-            ReviewCase.status == ReviewStatus.PENDING,
+            or_(
+                ReviewCase.status == ReviewStatus.PENDING,
+                and_(
+                    ReviewCase.status == ReviewStatus.IN_REVIEW,
+                    ReviewCase.lease_expires_at < utcnow(),
+                ),
+            ),
             Task.owner_id != user.id,
         )
         .order_by(ReviewCase.created_at.asc())
@@ -134,7 +140,13 @@ def claim_first_available(session: Session, user: User, trace_id: str) -> Review
 
 
 def release_review(session: Session, review_id: UUID, user: User, trace_id: str) -> ReviewCase:
-    review = get_review(session, review_id)
+    # 加行锁并重新检查状态：否则 release 与 decide 交错时，晚提交的
+    # release 会把已决策的审核单改回 PENDING，覆盖不可覆盖的结论。
+    review = session.scalar(
+        select(ReviewCase).where(ReviewCase.id == review_id).with_for_update()
+    )
+    if review is None:
+        raise AppError("REVIEW_NOT_FOUND", "审核单不存在", 404)
     if review.status != ReviewStatus.IN_REVIEW:
         raise AppError("INVALID_REVIEW_STATE", "只有审核中的审核单可以释放", 409)
     if user.role != Role.ADMIN and review.assignee_id != user.id:
@@ -180,6 +192,12 @@ def decide_review(
         raise AppError("INVALID_REVIEW_STATE", "审核单当前不可决策", 409)
     if user.role != Role.ADMIN and review.assignee_id != user.id:
         raise AppError("FORBIDDEN", "只能处理自己领取的审核单", 403)
+    if (
+        user.role != Role.ADMIN
+        and review.lease_expires_at is not None
+        and review.lease_expires_at < utcnow()
+    ):
+        raise AppError("REVIEW_LEASE_EXPIRED", "审核租约已过期，请重新领取", 409)
     if decision == ReviewDecision.REJECT and not (comment and comment.strip()):
         raise AppError("REVIEW_COMMENT_REQUIRED", "驳回时必须填写审核意见", 400)
 

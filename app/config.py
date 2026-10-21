@@ -1,8 +1,17 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_CREDENTIALS = {
+    "secret_key": "change-this-development-secret-key-32chars",
+    "admin_password": "Admin123!",
+    "reviewer_password": "Reviewer123!",
+    "submitter_password": "Submitter123!",
+    "minio_access_key": "minioadmin",
+    "minio_secret_key": "minioadmin",
+}
 
 
 class Settings(BaseSettings):
@@ -43,6 +52,20 @@ class Settings(BaseSettings):
 
     static_dir: Path = Field(default=Path(__file__).parent / "static")
     template_dir: Path = Field(default=Path(__file__).parent / "templates")
+
+    @model_validator(mode="after")
+    def _reject_default_secrets_in_production(self) -> "Settings":
+        """生产环境使用演示默认凭据时直接拒绝启动，而不是带着已知口令上线。"""
+        if self.app_env.lower() != "production":
+            return self
+        unchanged = [
+            name for name, default in _DEFAULT_CREDENTIALS.items()
+            if str(getattr(self, name)) == default
+        ]
+        if unchanged:
+            raise ValueError(
+                "生产环境必须覆盖以下默认凭据: " + ", ".join(unchanged))
+        return self
 
 
 @lru_cache

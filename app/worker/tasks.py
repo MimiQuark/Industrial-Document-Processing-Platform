@@ -22,6 +22,7 @@ from app.domain.enums import (
 )
 from app.domain.errors import PermanentProcessingError, ProcessingError, TransientProcessingError
 from app.domain.rules import determine_status, evaluate_rules
+from app.logging_config import configure_logging, task_id_var, trace_id_var
 from app.models import (
     DeadLetter,
     ParseArtifact,
@@ -187,6 +188,25 @@ def _finalize_cancel(session, task: Task, execution: TaskExecution) -> None:
 
 
 def _dead_letter(session, task: Task, execution: TaskExecution, error: ProcessingError) -> None:
+    # 取消请求优先于失败处理：否则 CANCELING 会永远停在中间态。
+    if task.status == TaskStatus.CANCELING or task.cancel_requested:
+        if task.status in {TaskStatus.RUNNING, TaskStatus.RETRYING,
+                           TaskStatus.CANCELING}:
+            transition_task(
+                session,
+                task,
+                target=TaskStatus.CANCELED,
+                progress=task.progress,
+                trace_id=task.trace_id,
+                event_type="task.canceled",
+                message="任务在失败前已请求取消",
+            )
+        execution.status = ExecutionStatus.FAILED
+        execution.error = "canceled"
+        execution.finished_at = utcnow()
+        session.commit()
+        return
+
     if task.status == TaskStatus.RUNNING:
         transition_task(
             session,
@@ -213,6 +233,7 @@ def _dead_letter(session, task: Task, execution: TaskExecution, error: Processin
     execution.error = str(error)
     execution.finished_at = utcnow()
     existing = session.scalar(select(DeadLetter).where(DeadLetter.task_id == task.id))
+    payload = {"task_id": str(task.id), "attempt": task.attempt_count}
     if existing is None:
         session.add(
             DeadLetter(
@@ -220,9 +241,17 @@ def _dead_letter(session, task: Task, execution: TaskExecution, error: Processin
                 outbox_event_id=execution.outbox_event_id,
                 reason_code=error.code,
                 reason=str(error),
-                payload={"task_id": str(task.id), "attempt": task.attempt_count},
+                payload=payload,
             )
         )
+    else:
+        # 第二次死亡必须重新打开死信，否则管理员 requeue 会被状态检查拒绝。
+        existing.outbox_event_id = execution.outbox_event_id
+        existing.reason_code = error.code
+        existing.reason = str(error)
+        existing.payload = payload
+        existing.status = "open"
+        existing.requeued_at = None
     append_audit_event(
         session,
         actor_id=None,
@@ -378,15 +407,20 @@ def _cancel_if_requested(task_id: UUID, event_id: UUID) -> bool:
     max_retries=settings.retry_max_retries,
 )
 def process_task(self, task_id: str, event_id: str) -> str:
+    configure_logging()
     task_uuid = UUID(task_id)
     event_uuid = UUID(event_id)
+    task_token = task_id_var.set(task_id)
+    trace_token = None
     with SessionLocal() as session:
         task, execution = _claim_execution(session, task_uuid, event_uuid, str(self.request.id))
         if task is None or execution is None:
+            task_id_var.reset(task_token)
             return "ignored"
         task_type = task.task_type
         raw_bucket = task.file.bucket
         raw_object_key = task.file.object_key
+        trace_token = trace_id_var.set(task.trace_id)
 
     temp_path: Path | None = None
     try:
@@ -486,3 +520,6 @@ def process_task(self, task_id: str, event_id: str) -> str:
         if temp_path:
             with suppress(OSError):
                 temp_path.unlink()
+        if trace_token is not None:
+            trace_id_var.reset(trace_token)
+        task_id_var.reset(task_token)

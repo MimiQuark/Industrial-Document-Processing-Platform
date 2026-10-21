@@ -5,11 +5,13 @@
   <h1>登录平台</h1>
   <p class="muted">使用种子账号体验提交、异步处理和审核闭环。</p>
   <form id="login-form">
-    <p><label for="email">邮箱</label><input id="email" type="email" value="admin@example.com" required></p>
-    <p><label for="password">密码</label><input id="password" type="password" value="Admin123!" required></p>
+    <p><label for="email">邮箱</label><input id="email" type="email" value="{{ 'admin@example.com' if show_demo else '' }}" required></p>
+    <p><label for="password">密码</label><input id="password" type="password" value="{{ 'Admin123!' if show_demo else '' }}" required></p>
     <button type="submit">登录</button>
   </form>
-  <p class="muted">管理员：admin@example.com / Admin123!<br>审核员：reviewer@example.com / Reviewer123!<br>提交者：submitter@example.com / Submitter123!</p>
+  {% if show_demo %}
+  <p class="muted">开发环境演示账号：<br>管理员：admin@example.com / Admin123!<br>审核员：reviewer@example.com / Reviewer123!<br>提交者：submitter@example.com / Submitter123!</p>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}

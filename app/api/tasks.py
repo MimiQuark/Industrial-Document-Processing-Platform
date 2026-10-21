@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal, get_db
 from app.dependencies import get_current_user, get_trace_id
 from app.domain.enums import TaskPriority, TaskStatus, TaskType
-from app.models import TaskEvent, User
+from app.models import Task, TaskEvent, User
 from app.schemas import (
     ResultResponse,
     RuleFindingRead,
@@ -222,7 +222,18 @@ def events(
                         continue
                 else:
                     yield ": heartbeat\n\n"
-                if last_id and request.is_disconnected():
+                    # 任务进入终态后关闭 SSE，避免长期占用线程池连接。
+                    with SessionLocal() as check_session:
+                        status = check_session.scalar(
+                            select(Task.status).where(Task.id == task_id)
+                        )
+                    if status in {
+                        TaskStatus.SUCCEEDED, TaskStatus.FAILED,
+                        TaskStatus.CANCELED, TaskStatus.DEAD,
+                        TaskStatus.REVIEW_PENDING,
+                    }:
+                        break
+                if request.is_disconnected():
                     break
                 time.sleep(0.1)
         finally:

@@ -82,9 +82,12 @@ stateDiagram-v2
     RETRYING --> DEAD
     REVIEW_PENDING --> SUCCEEDED
     REVIEW_PENDING --> FAILED
-    QUEUED --> CANCELING
+    QUEUED --> CANCELED
     RUNNING --> CANCELING
     CANCELING --> CANCELED
+    FAILED --> QUEUED: 重试/管理员重投
+    RETRYING --> QUEUED: 重新调度
+    RETRYING --> CANCELED
     DEAD --> QUEUED: 管理员重投
 ```
 

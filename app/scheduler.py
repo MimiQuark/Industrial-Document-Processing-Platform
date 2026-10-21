@@ -76,13 +76,19 @@ def _dispatch_once() -> int:
                 claimed_event.last_error = None
                 published += 1
             except Exception as exc:
-                delay = min(
-                    settings.retry_base_seconds * (2 ** max(claimed_event.attempts - 1, 0)),
-                    60,
-                )
-                claimed_event.status = OutboxStatus.PENDING
-                claimed_event.available_at = utcnow() + timedelta(seconds=delay)
-                claimed_event.last_error = str(exc)
+                if claimed_event.attempts >= 10:
+                    # 有上限的重试，避免永久失败的 outbox 事件无限重投。
+                    claimed_event.status = OutboxStatus.FAILED
+                    claimed_event.last_error = f"超过最大重试次数: {exc}"
+                else:
+                    delay = min(
+                        settings.retry_base_seconds
+                        * (2 ** max(claimed_event.attempts - 1, 0)),
+                        60,
+                    )
+                    claimed_event.status = OutboxStatus.PENDING
+                    claimed_event.available_at = utcnow() + timedelta(seconds=delay)
+                    claimed_event.last_error = str(exc)
             session.commit()
     return published
 
@@ -133,7 +139,10 @@ def _recover_stale_once() -> int:
                 if execution:
                     execution.status = ExecutionStatus.DEAD
                     execution.finished_at = utcnow()
-                if session.scalar(select(DeadLetter).where(DeadLetter.task_id == task.id)) is None:
+                dead_letter = session.scalar(
+                    select(DeadLetter).where(DeadLetter.task_id == task.id)
+                )
+                if dead_letter is None:
                     session.add(
                         DeadLetter(
                             task_id=task.id,
@@ -143,6 +152,23 @@ def _recover_stale_once() -> int:
                             payload={"task_id": str(task.id)},
                         )
                     )
+                else:
+                    dead_letter.status = "open"
+                    dead_letter.reason_code = "EXECUTION_LEASE_EXPIRED"
+                    dead_letter.reason = task.failure_message
+                    dead_letter.payload = {"task_id": str(task.id)}
+                    dead_letter.requeued_at = None
+                session.add(
+                    TaskEvent(
+                        task_id=task.id,
+                        event_type="task.dead",
+                        from_status=TaskStatus.RETRYING,
+                        to_status=TaskStatus.DEAD,
+                        progress=task.progress,
+                        message="执行租约过期且重试次数耗尽，进入死信队列",
+                        trace_id=task.trace_id,
+                    )
+                )
             else:
                 event_id = uuid4()
                 payload = {

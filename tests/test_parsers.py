@@ -30,3 +30,20 @@ def test_gerber_parser_reads_core_commands(tmp_path: Path):
     assert result.metrics["has_units"] is True
     assert result.metrics["has_end"] is True
     assert result.metrics["operation_draw"] == 1
+
+
+def test_encrypted_pdf_returns_metrics_instead_of_crashing(tmp_path: Path):
+    from pypdf import PdfWriter
+
+    from app.parsers.pdf import parse_pdf
+
+    pdf = tmp_path / "encrypted.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.encrypt("secret")
+    with pdf.open("wb") as stream:
+        writer.write(stream)
+
+    result = parse_pdf(pdf)
+    assert result.metrics["is_encrypted"] is True
+    assert result.metrics["page_count"] == 0

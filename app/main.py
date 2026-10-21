@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
@@ -46,8 +47,9 @@ app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="stat
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
-    trace_id = request.headers.get("X-Trace-ID")
-    if not trace_id or len(trace_id) > 64:
+    # 只接受安全字符集，防止 trace_id 进入页面/日志时形成注入。
+    trace_id = request.headers.get("X-Trace-ID", "")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", trace_id):
         trace_id = uuid4().hex
     request.state.trace_id = trace_id
     token = trace_id_var.set(trace_id)
@@ -61,7 +63,8 @@ async def request_context(request: Request, call_next):
     finally:
         latency = time.perf_counter() - started
         route = request.scope.get("route")
-        path = getattr(route, "path", request.url.path)
+        # 未匹配路由不能把原始 URL 当标签（会造成 Prometheus 基数爆炸）
+        path = getattr(route, "path", None) or "<unmatched>"
         HTTP_REQUESTS.labels(request.method, path, str(status_code)).inc()
         HTTP_LATENCY.labels(request.method, path).observe(latency)
         logger.info(
@@ -82,7 +85,9 @@ def index(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return render(request, "login.html", active="login")
+    return render(
+        request, "login.html", active="login",
+        show_demo=settings.app_env.lower() != "production")
 
 
 @app.get("/tasks/new", response_class=HTMLResponse)

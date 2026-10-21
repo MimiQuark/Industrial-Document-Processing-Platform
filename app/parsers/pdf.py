@@ -14,6 +14,22 @@ def parse_pdf(path: Path) -> ParseResult:
     try:
         reader = PdfReader(str(path), strict=False)
         encrypted = bool(reader.is_encrypted)
+        if encrypted:
+            # 加密 PDF 无法读取页面/元数据；先返回可解释的结果，
+            # 让 PDF_ENCRYPTED 规则生效，而不是在 len(reader.pages) 处崩溃。
+            metrics = {
+                "page_count": 0,
+                "is_encrypted": True,
+                "text_char_count": 0,
+                "metadata_count": 0,
+            }
+            summary = {
+                "page_count": 0,
+                "metadata": {},
+                "text_preview": "",
+                "encrypted": True,
+            }
+            return ParseResult(TaskType.PDF, PARSER_VERSION, metrics, summary)
         page_count = len(reader.pages)
         metadata = {str(k): str(v) for k, v in (reader.metadata or {}).items()}
         text = ""

@@ -9,7 +9,7 @@
 const loadAudit = async () => {
   const data = await api("/api/v1/admin/audit?limit=100");
   document.getElementById("audit-body").innerHTML = data.items.length ? data.items.map(item => `
-    <tr><td>${item.id}</td><td>${escapeHtml(item.action)}</td><td>${escapeHtml(item.resource_type)} / <span class="mono">${item.resource_id.slice(0, 8)}</span></td><td class="mono">${item.actor_id ? item.actor_id.slice(0, 8) : "system"}</td><td class="mono">${item.trace_id.slice(0, 12)}</td><td>${formatTime(item.created_at)}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">暂无审计日志</td></tr>`;
+    <tr><td>${item.id}</td><td>${escapeHtml(item.action)}</td><td>${escapeHtml(item.resource_type)} / <span class="mono">${escapeHtml((item.resource_id || "").slice(0, 8))}</span></td><td class="mono">${escapeHtml(item.actor_id ? item.actor_id.slice(0, 8) : "system")}</td><td class="mono">${escapeHtml((item.trace_id || "").slice(0, 12))}</td><td>${formatTime(item.created_at)}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">暂无审计日志</td></tr>`;
 };
 document.getElementById("verify-button").addEventListener("click", async () => {
   try { const result = await api("/api/v1/admin/audit/verify", { method: "POST" }); showToast(result.valid ? "审计链完整" : `审计链在事件 ${result.broken_event_id} 断开`, !result.valid); }

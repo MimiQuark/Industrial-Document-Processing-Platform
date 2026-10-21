@@ -160,6 +160,22 @@ class RuleRead(ORMModel):
     created_at: datetime
 
 
+_RULE_OPERATORS = {"truthy", "falsy", "gt", "gte", "lt", "lte", "eq", "ne"}
+
+
+def _validate_rule_config(config: dict[str, Any]) -> dict[str, Any]:
+    """在写入前校验规则配置，避免 Worker 运行时才因未知操作符/缺失值报错。"""
+    metric = config.get("metric")
+    if not isinstance(metric, str) or not metric.strip():
+        raise ValueError("rule config.metric 必须是非空字符串")
+    operator = config.get("operator", "truthy")
+    if operator not in _RULE_OPERATORS:
+        raise ValueError(f"不支持的规则操作符: {operator}")
+    if operator not in {"truthy", "falsy"} and config.get("value") is None:
+        raise ValueError(f"操作符 {operator} 需要 config.value")
+    return config
+
+
 class RuleCreate(BaseModel):
     code: str = Field(min_length=3, max_length=120, pattern=r"^[A-Z0-9_]+$")
     name: str = Field(min_length=2, max_length=200)
@@ -169,6 +185,11 @@ class RuleCreate(BaseModel):
     enabled: bool = True
     config: dict[str, Any]
 
+    @model_validator(mode="after")
+    def _check_config(self) -> RuleCreate:
+        _validate_rule_config(self.config)
+        return self
+
 
 class RulePatch(BaseModel):
     name: str | None = Field(default=None, max_length=200)
@@ -176,6 +197,12 @@ class RulePatch(BaseModel):
     severity: RuleSeverity | None = None
     enabled: bool | None = None
     config: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _check_config(self) -> RulePatch:
+        if self.config is not None:
+            _validate_rule_config(self.config)
+        return self
 
 
 class DeadLetterRead(ORMModel):

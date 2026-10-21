@@ -57,6 +57,7 @@ def _event_payload(task: Task, event_id: UUID) -> dict:
         "task_id": str(task.id),
         "priority": task.priority.value,
         "queue": PRIORITY_QUEUES[task.priority],
+        "trace_id": task.trace_id,
     }
 
 
@@ -192,14 +193,6 @@ def create_task(
             raise FileValidationError("请求的任务类型与文件扩展名不匹配")
         validate_signature(task_type, preamble)
 
-        active_count = session.scalar(
-            select(func.count(Task.id)).where(
-                Task.owner_id == owner.id, Task.status.in_(ACTIVE_TASK_STATUSES)
-            )
-        )
-        if (active_count or 0) >= get_settings().active_task_limit:
-            raise AppError("ACTIVE_TASK_LIMIT", "活动任务数量已达上限", 429)
-
         existing_by_key = session.scalar(
             select(Task)
             .options(selectinload(Task.file))
@@ -224,6 +217,15 @@ def create_task(
         )
         if existing_by_hash:
             return existing_by_hash, True
+
+        # 幂等重放优先于活动任务上限：否则重放会被误判成 429。
+        active_count = session.scalar(
+            select(func.count(Task.id)).where(
+                Task.owner_id == owner.id, Task.status.in_(ACTIVE_TASK_STATUSES)
+            )
+        )
+        if (active_count or 0) >= get_settings().active_task_limit:
+            raise AppError("ACTIVE_TASK_LIMIT", "活动任务数量已达上限", 429)
 
         extension = Path(upload.filename).suffix.lower()
         object_key = f"{owner.id}/{sha256}/original{extension}"
@@ -259,7 +261,38 @@ def create_task(
             rule_version=_rule_version(session),
         )
         session.add_all([file_object, task])
-        session.flush()
+        try:
+            session.flush()
+        except IntegrityError as exc:
+            # 并发上传同一文件/同一幂等键：flush 阶段就会撞唯一约束，
+            # 不能让它冒泡成 500。先按幂等键区分冲突与重放。
+            session.rollback()
+            raced_by_key = session.scalar(
+                select(Task)
+                .options(selectinload(Task.file))
+                .where(Task.owner_id == owner.id,
+                       Task.idempotency_key == idempotency_key)
+            )
+            if raced_by_key is not None:
+                if raced_by_key.file.sha256 != sha256:
+                    raise AppError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "相同 Idempotency-Key 已用于不同文件",
+                        409,
+                        {"task_id": str(raced_by_key.id)},
+                    ) from exc
+                return raced_by_key, True
+            raced_by_hash = session.scalar(
+                select(Task)
+                .join(FileObject, Task.file_id == FileObject.id)
+                .options(selectinload(Task.file))
+                .where(FileObject.owner_id == owner.id,
+                       FileObject.sha256 == sha256)
+                .order_by(Task.created_at.desc())
+            )
+            if raced_by_hash is None:
+                raise
+            return raced_by_hash, True
         _create_outbox(session, task)
         add_task_event(
             session,
@@ -286,8 +319,23 @@ def create_task(
         )
         try:
             session.commit()
-        except IntegrityError:
+        except IntegrityError as exc:
             session.rollback()
+            raced_by_key = session.scalar(
+                select(Task)
+                .options(selectinload(Task.file))
+                .where(Task.owner_id == owner.id,
+                       Task.idempotency_key == idempotency_key)
+            )
+            if raced_by_key is not None:
+                if raced_by_key.file.sha256 != sha256:
+                    raise AppError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "相同 Idempotency-Key 已用于不同文件",
+                        409,
+                        {"task_id": str(raced_by_key.id)},
+                    ) from exc
+                return raced_by_key, True
             existing = session.scalar(
                 select(Task)
                 .join(FileObject, Task.file_id == FileObject.id)
@@ -375,7 +423,9 @@ def cancel_task(session: Session, task_id: UUID, user: User, trace_id: str) -> T
     task = session.scalar(select(Task).where(Task.id == task_id).with_for_update())
     if task is None:
         raise AppError("TASK_NOT_FOUND", "任务不存在", 404)
-    ensure_task_access(task, user)
+    # 取消：仅任务所有者或管理员；审核员不应能取消他人任务。
+    if user.role != Role.ADMIN and task.owner_id != user.id:
+        raise AppError("FORBIDDEN", "只能取消自己的任务", 403)
     if task.status in {TaskStatus.CANCELED, TaskStatus.CANCELING}:
         return task
     if task.status in {TaskStatus.QUEUED, TaskStatus.RETRYING}:
@@ -419,7 +469,9 @@ def retry_task(session: Session, task_id: UUID, user: User, trace_id: str) -> Ta
     task = session.scalar(select(Task).where(Task.id == task_id).with_for_update())
     if task is None:
         raise AppError("TASK_NOT_FOUND", "任务不存在", 404)
-    ensure_task_access(task, user)
+    # 手工重试按文档约定仅限管理员；普通用户重新提交新任务。
+    if user.role != Role.ADMIN:
+        raise AppError("FORBIDDEN", "仅管理员可以手工重试任务", 403)
     if task.failure_code == "REVIEW_REJECTED":
         raise AppError("REVIEW_REJECTED", "审核驳回任务必须重新提交新文件", 409)
     if task.status not in {TaskStatus.FAILED, TaskStatus.DEAD}:

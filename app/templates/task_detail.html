@@ -33,7 +33,7 @@ const loadTask = async () => {
   document.getElementById("findings").innerHTML = task.findings.length ? task.findings.map(item => `
     <div class="event"><strong>${escapeHtml(item.code)}</strong> <span class="badge">${item.severity}</span><div>${escapeHtml(item.message)}</div></div>
   `).join("") : `<div class="empty">暂无规则告警</div>`;
-  document.getElementById("technical").innerHTML = `<p>Trace ID：<span class="mono">${task.trace_id}</span></p><p>解析器版本：${task.parser_version || "-"} · 规则版本：${task.rule_version}</p>`;
+  document.getElementById("technical").innerHTML = `<p>Trace ID：<span class="mono">${escapeHtml(task.trace_id)}</span></p><p>解析器版本：${escapeHtml(task.parser_version || "-")} · 规则版本：${escapeHtml(task.rule_version)}</p>`;
   if (task.result_summary) {
     const result = document.getElementById("result-summary");
     result.textContent = JSON.stringify(task.result_summary, null, 2); result.classList.remove("hidden");

@@ -80,6 +80,7 @@ def append_audit_event(
 
 def verify_audit_chain(session: Session) -> tuple[bool, str | None]:
     events = session.scalars(select(AuditEvent).order_by(AuditEvent.id)).all()
+    head = session.get(AuditChainHead, "global")
     previous = ""
     for event in events:
         payload = {
@@ -96,4 +97,11 @@ def verify_audit_chain(session: Session) -> tuple[bool, str | None]:
         if event.prev_hash != previous or event.event_hash != expected:
             return False, str(event.id)
         previous = event.event_hash
+
+    # 只校验事件链本身无法发现“尾部事件被截断”：必须与链头记录的
+    # last_hash 对齐。没有事件且没有链头 = 全新库；有事件但无链头 = 异常。
+    if head is None:
+        return (not events), (str(events[-1].id) if events else None)
+    if previous != head.last_hash:
+        return False, (str(events[-1].id) if events else "head")
     return True, None
